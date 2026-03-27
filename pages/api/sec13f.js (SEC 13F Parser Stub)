@@ -1,0 +1,40 @@
+export default async function handler(req, res) {
+  if (req.method !== 'GET') {
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
+
+  const { fund, ticker } = req.query;
+
+  try {
+    // TODO: Implement SEC 13F filing parsing
+    // This will fetch and parse institutional holdings data from:
+    // - SEC EDGAR API: https://www.sec.gov/cgi-bin/browse-edgar
+    // - OpenFECS: Alternative SEC data source
+    // - Finviz: 13F insider holdings aggregator
+
+    // Stub response showing expected structure
+    const stubData = {
+      fund: fund || 'Example Fund',
+      lastFiling: '2026-02-15',
+      holdings: [
+        {
+          ticker: ticker || 'NVDA',
+          shares: 1250000,
+          value: 187500000,
+          positionChange: 'increase',
+          percentageOfPortfolio: 2.5,
+        },
+      ],
+      shortPositions: [],
+    };
+
+    res.status(200).json({
+      message: 'SEC 13F parser - implementation in progress',
+      data: stubData,
+      status: 'stub',
+    });
+  } catch (error) {
+    console.error('SEC 13F error:', error);
+    res.status(500).json({ error: 'Failed to fetch 13F data' });
+  }
+}
