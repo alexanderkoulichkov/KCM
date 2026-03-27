@@ -1,0 +1,76 @@
+export default async function handler(req, res) {
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
+
+  const { strategies, risk, horizon, market } = req.body;
+  const anthropicApiKey = process.env.ANTHROPIC_API_KEY;
+
+  if (!anthropicApiKey) {
+    return res.status(500).json({ error: 'Missing ANTHROPIC_API_KEY' });
+  }
+
+  const systemPrompt = `You are a senior research analyst at KCM (Koulichkov Capital Management).
+Respond ONLY with a valid JSON object — no markdown, no backticks, no extra text.
+
+{
+  "stocks": [
+    {
+      "ticker": "NVDA",
+      "company": "NVIDIA Corporation",
+      "sector": "Semiconductors",
+      "strategy": "AI Growth",
+      "conviction": "high",
+      "risk": "Medium",
+      "thesis": "Leading AI chip provider benefiting from accelerating enterprise AI deployment and data center expansion.",
+      "hedgeFunds": "Tiger Global, Coatue, D1 Capital"
+    }
+  ],
+  "briefing": "The AI boom continues to accelerate in Q1 2026, with hedge funds doubling down on semiconductor and software plays. Enterprise spending on AI infrastructure remains robust despite macro headwinds. Key risks include geopolitical tensions affecting chip exports and potential valuation compression if growth rates disappoint. Position sizing recommendation: 3-5% of portfolio for retail traders with 6-12 month horizon.",
+  "timestamp": "Q1 2026"
+}
+
+Rules: exactly 6 stocks, real Robinhood-tradable US equities, current themes (AI, infrastructure, energy, consumer resilience), mix of large and mid cap. conviction must be high/medium/low only.`;
+
+  const userPrompt = `KCM scan parameters:
+- Risk tolerance: ${risk}
+- Time horizon: ${horizon}
+- Market focus: ${market}
+- Strategies: ${strategies}
+
+Generate 6 institutional-grade stock picks based on current hedge fund positioning in Q1 2026. Include real buying/shorting metrics and fund names where applicable.`;
+
+  try {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': anthropicApiKey,
+      },
+      body: JSON.stringify({
+        model: 'claude-opus-4-1-20250805',
+        max_tokens: 2000,
+        system: systemPrompt,
+        messages: [{ role: 'user', content: userPrompt }],
+      }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error?.message || 'Anthropic API error');
+    }
+
+    const data = await response.json();
+    const raw = data.content.map(b => b.text || '').join('');
+    const parsed = JSON.parse(raw.replace(/```json|```/g, '').trim());
+
+    res.status(200).json({
+      stocks: parsed.stocks || [],
+      briefing: parsed.briefing || '',
+      timestamp: parsed.timestamp || 'Q1 2026',
+    });
+  } catch (error) {
+    console.error('Error:', error);
+    res.status(500).json({ error: error.message || 'Failed to generate stock picks' });
+  }
+}
