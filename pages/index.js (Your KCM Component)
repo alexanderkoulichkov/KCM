@@ -1,0 +1,307 @@
+import { useState } from "react";
+
+const STEPS = [
+  "Scanning 13F institutional filings...",
+  "Cross-referencing top fund managers...",
+  "Applying strategy & risk filters...",
+  "Analyzing conviction & position changes...",
+  "Compiling recommendations...",
+];
+
+const ALL_STRATEGIES = [
+  { id: "momentum", label: "Momentum" },
+  { id: "value", label: "Deep Value" },
+  { id: "growth", label: "High Growth" },
+  { id: "dividend", label: "Dividend" },
+  { id: "catalyst", label: "Catalyst Driven" },
+  { id: "contrarian", label: "Contrarian" },
+  { id: "turnaround", label: "Turnaround" },
+  { id: "ai", label: "AI / Tech Disruption" },
+];
+
+function ConvictionDots({ level }) {
+  const count = level === "high" ? 5 : level === "medium" ? 3 : 2;
+  return (
+    <div style={{ display: "flex", gap: 3 }}>
+      {Array.from({ length: 5 }, (_, i) => (
+        <div key={i} style={{
+          width: 9, height: 9, borderRadius: "50%",
+          background: i < count ? "#0d1b3e" : "#e2e6ec",
+          opacity: i < count ? (level === "low" ? 0.4 : level === "medium" ? 0.7 : 1) : 1,
+        }} />
+      ))}
+    </div>
+  );
+}
+
+function RiskTag({ risk }) {
+  const r = (risk || "").toLowerCase();
+  const style = r.includes("low")
+    ? { background: "#f0f7f3", color: "#1a7a4a" }
+    : r.includes("high")
+    ? { background: "#fdf0ef", color: "#b03a2e" }
+    : { background: "#fdf8ef", color: "#8a6a1a" };
+  return (
+    <span style={{ ...style, fontSize: 9, padding: "3px 8px", borderRadius: 3, fontFamily: "monospace", textTransform: "uppercase", letterSpacing: 0.5 }}>
+      {risk} Risk
+    </span>
+  );
+}
+
+function StockCard({ stock, idx }) {
+  return (
+    <div style={{
+      background: "#fff", border: "1px solid #e2e6ec", borderRadius: 10,
+      padding: "18px 20px", animation: `fadeUp 0.3s ease ${idx * 80}ms both`,
+    }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12, paddingBottom: 12, borderBottom: "1px solid #e2e6ec" }}>
+        <div>
+          <div style={{ fontFamily: "Georgia, serif", fontSize: 26, fontWeight: 900, color: "#0d1b3e", lineHeight: 1 }}>{stock.ticker}</div>
+          <div style={{ fontSize: 11, color: "#8896a8", marginTop: 3 }}>{stock.company}</div>
+        </div>
+        <div style={{ textAlign: "right" }}>
+          <div style={{ fontFamily: "monospace", fontSize: 8, color: "#8896a8", letterSpacing: 1, textTransform: "uppercase", marginBottom: 4 }}>Conviction</div>
+          <ConvictionDots level={stock.conviction || "medium"} />
+        </div>
+      </div>
+      <div style={{ fontSize: 12, lineHeight: 1.65, color: "#4a5568", marginBottom: 12 }}>{stock.thesis}</div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginBottom: 12 }}>
+        <span style={{ background: "#e8edf5", color: "#0d1b3e", fontSize: 9, padding: "3px 8px", borderRadius: 3, fontFamily: "monospace", textTransform: "uppercase", letterSpacing: 0.5 }}>{stock.sector}</span>
+        <span style={{ background: "#f0f4f0", color: "#1a7a4a", border: "1px solid #c8ddc8", fontSize: 9, padding: "3px 8px", borderRadius: 3, fontFamily: "monospace", textTransform: "uppercase", letterSpacing: 0.5 }}>{stock.strategy}</span>
+        <RiskTag risk={stock.risk} />
+      </div>
+      <div style={{ fontSize: 11, color: "#8896a8", paddingTop: 10, borderTop: "1px solid #e2e6ec", fontFamily: "monospace", lineHeight: 1.5 }}>
+        <strong style={{ color: "#4a5568" }}>Notable Holders:</strong> {stock.hedgeFunds}
+      </div>
+    </div>
+  );
+}
+
+export default function KCM() {
+  const [activeStrategies, setActiveStrategies] = useState(new Set(["momentum", "value", "growth"]));
+  const [risk, setRisk] = useState("moderate");
+  const [horizon, setHorizon] = useState("6-12 months");
+  const [market, setMarket] = useState("US large cap");
+  const [loading, setLoading] = useState(false);
+  const [stepIdx, setStepIdx] = useState(-1);
+  const [stocks, setStocks] = useState([]);
+  const [briefing, setBriefing] = useState("");
+  const [timestamp, setTimestamp] = useState("");
+  const [error, setError] = useState("");
+
+  const toggleStrategy = (id) => {
+    setActiveStrategies(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
+  const runScan = async () => {
+    setLoading(true);
+    setStepIdx(0);
+    setStocks([]);
+    setBriefing("");
+    setError("");
+
+    const strategies = Array.from(activeStrategies).join(", ") || "momentum, value, growth";
+
+    let si = 0;
+    const stepTimer = setInterval(() => {
+      si = Math.min(si + 1, STEPS.length - 1);
+      setStepIdx(si);
+    }, 1500);
+
+    try {
+      const res = await fetch("/api/scan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          strategies,
+          risk,
+          horizon,
+          market,
+        }),
+      });
+
+      clearInterval(stepTimer);
+      setStepIdx(STEPS.length);
+
+      if (!res.ok) {
+        const e = await res.json();
+        throw new Error(e.error || "API error");
+      }
+
+      const data = await res.json();
+      setStocks(data.stocks || []);
+      setBriefing(data.briefing || "");
+      setTimestamp(data.timestamp || "Q1 2026");
+    } catch (err) {
+      clearInterval(stepTimer);
+      setError(err.message || "Something went wrong. Please try again.");
+    }
+
+    setLoading(false);
+    setStepIdx(-1);
+  };
+
+  const hasResults = stocks.length > 0;
+
+  return (
+    <div style={{ fontFamily: "'DM Sans', sans-serif", background: "#f4f5f7", minHeight: "100vh" }}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=DM+Sans:wght@300;400;500&display=swap');
+        @keyframes fadeUp { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes pulse { 50% { opacity: 0.3; } }
+        * { box-sizing: border-box; }
+        select { appearance: none; cursor: pointer; }
+        button { cursor: pointer; }
+      `}</style>
+
+      {/* Top bar */}
+      <div style={{ background: "#0d1b3e", padding: "9px 32px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <span style={{ fontFamily: "monospace", fontSize: 10, color: "rgba(255,255,255,0.3)", letterSpacing: 1.5 }}>KOULICHKOV CAPITAL MANAGEMENT — PRIVATE RESEARCH PLATFORM</span>
+        <span style={{ display: "flex", alignItems: "center", gap: 6, fontFamily: "monospace", fontSize: 10, color: "#b89650", letterSpacing: 1 }}>
+          <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#b89650", display: "inline-block", animation: "pulse 2s infinite" }} />
+          AI INTELLIGENCE ACTIVE
+        </span>
+      </div>
+
+      {/* Header */}
+      <div style={{ background: "#fff", borderBottom: "1px solid #e2e6ec", padding: "28px 32px" }}>
+        <div style={{ maxWidth: 1040, margin: "0 auto", display: "flex", alignItems: "flex-end", justifyContent: "space-between" }}>
+          <div>
+            <div style={{ fontFamily: "Georgia, serif", fontSize: 44, fontWeight: 900, color: "#0d1b3e", lineHeight: 1, letterSpacing: -1 }}>
+              KCM<span style={{ color: "#b89650" }}>.</span>
+            </div>
+            <div style={{ fontFamily: "monospace", fontSize: 10, color: "#8896a8", letterSpacing: 3, textTransform: "uppercase", marginTop: 5 }}>Koulichkov Capital Management</div>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 24 }}>
+            <div style={{ width: 1, height: 44, background: "#e2e6ec" }} />
+            <div style={{ textAlign: "right" }}>
+              <div style={{ fontFamily: "monospace", fontSize: 9, color: "#8896a8", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 3 }}>Strategy</div>
+              <div style={{ fontFamily: "Georgia, serif", fontSize: 14, fontWeight: 700, color: "#4a5568" }}>Hedge Fund Intelligence</div>
+            </div>
+            <div style={{ width: 1, height: 44, background: "#e2e6ec" }} />
+            <div style={{ textAlign: "right" }}>
+              <div style={{ fontFamily: "monospace", fontSize: 9, color: "#8896a8", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 3 }}>Platform</div>
+              <div style={{ fontFamily: "Georgia, serif", fontSize: 14, fontWeight: 700, color: "#4a5568" }}>Robinhood Ready</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Main */}
+      <div style={{ maxWidth: 1040, margin: "0 auto", padding: "32px 32px 80px" }}>
+
+        {/* Strategy pills */}
+        <div style={{ background: "#fff", border: "1px solid #e2e6ec", borderRadius: 10, padding: "20px 24px", marginBottom: 16 }}>
+          <div style={{ fontFamily: "monospace", fontSize: 10, color: "#8896a8", letterSpacing: 2.5, textTransform: "uppercase", marginBottom: 12, paddingBottom: 8, borderBottom: "1px solid #e2e6ec" }}>Investment Strategy Filter</div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+            {ALL_STRATEGIES.map(s => (
+              <button key={s.id} onClick={() => toggleStrategy(s.id)} style={{
+                fontFamily: "monospace", fontSize: 10, letterSpacing: 1, padding: "6px 14px",
+                borderRadius: 4, border: "1px solid", textTransform: "uppercase",
+                background: activeStrategies.has(s.id) ? "#0d1b3e" : "transparent",
+                borderColor: activeStrategies.has(s.id) ? "#0d1b3e" : "#e2e6ec",
+                color: activeStrategies.has(s.id) ? "#fff" : "#8896a8",
+                transition: "all 0.15s",
+              }}>{s.label}</button>
+            ))}
+          </div>
+        </div>
+
+        {/* Controls */}
+        <div style={{ background: "#fff", border: "1px solid #e2e6ec", borderRadius: 10, padding: "24px", marginBottom: 20 }}>
+          <div style={{ fontFamily: "monospace", fontSize: 10, color: "#8896a8", letterSpacing: 2.5, textTransform: "uppercase", marginBottom: 14, paddingBottom: 8, borderBottom: "1px solid #e2e6ec" }}>Screening Parameters</div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16, marginBottom: 20 }}>
+            {[
+              { label: "Risk Tolerance", id: "risk", val: risk, set: setRisk, opts: [["moderate","Moderate"],["aggressive","Aggressive"],["conservative","Conservative"]] },
+              { label: "Time Horizon", id: "hor", val: horizon, set: setHorizon, opts: [["6-12 months","6–12 Months"],["1-2 years","1–2 Years"],["3-5 years","3–5 Years"],["short term 1-3 months","Short Term (1–3 Mo)"]] },
+              { label: "Market Cap Focus", id: "mkt", val: market, set: setMarket, opts: [["US large cap","US Large Cap"],["US mid cap","US Mid Cap"],["US small cap","US Small Cap"],["any US market","All US Markets"]] },
+            ].map(f => (
+              <div key={f.id}>
+                <div style={{ fontFamily: "monospace", fontSize: 9, color: "#8896a8", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 6 }}>{f.label}</div>
+                <select value={f.val} onChange={e => f.set(e.target.value)} style={{ width: "100%", background: "#f4f5f7", border: "1px solid #e2e6ec", color: "#1c2434", fontSize: 13, padding: "10px 14px", borderRadius: 6, outline: "none", fontFamily: "inherit" }}>
+                  {f.opts.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                </select>
+              </div>
+            ))}
+          </div>
+          <button onClick={runScan} disabled={loading} style={{
+            width: "100%", background: loading ? "#c8d0db" : "#0d1b3e", color: loading ? "#8896a8" : "#fff",
+            border: "none", fontSize: 14, fontWeight: 500, letterSpacing: 1, padding: "13px 32px",
+            borderRadius: 6, transition: "background 0.15s", display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+          }}>
+            {loading
+              ? <><span style={{ width: 14, height: 14, border: "2px solid #8896a8", borderTopColor: "#fff", borderRadius: "50%", display: "inline-block", animation: "spin 0.8s linear infinite" }} /> Scanning...</>
+              : "▶  RUN INTELLIGENCE SCAN"}
+          </button>
+        </div>
+
+        {/* Error */}
+        {error && (
+          <div style={{ background: "#fdf0ef", border: "1px solid #e8c4c0", borderRadius: 8, padding: "14px 18px", color: "#b03a2e", fontSize: 13, marginBottom: 20 }}>
+            ⚠ {error}
+          </div>
+        )}
+
+        {/* Progress */}
+        {loading && (
+          <div style={{ background: "#fff", border: "1px solid #e2e6ec", borderLeft: "3px solid #0d1b3e", borderRadius: 10, padding: "20px 24px", marginBottom: 20 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, fontFamily: "monospace", fontSize: 10, color: "#0d1b3e", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 12 }}>
+              <span style={{ width: 14, height: 14, border: "2px solid #e2e6ec", borderTopColor: "#0d1b3e", borderRadius: "50%", display: "inline-block", animation: "spin 0.8s linear infinite" }} />
+              Running Hedge Fund Intelligence Scan
+            </div>
+            {STEPS.map((s, i) => (
+              <div key={i} style={{
+                fontFamily: "monospace", fontSize: 11, padding: "3px 0",
+                color: i < stepIdx ? "#1a7a4a" : i === stepIdx ? "#0d1b3e" : "#c8d0db",
+                transition: "color 0.3s",
+              }}>
+                {i < stepIdx ? "✓ " : i === stepIdx ? "→ " : "  "}{s}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Results */}
+        {hasResults && (
+          <>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+              <div style={{ fontFamily: "Georgia, serif", fontSize: 24, fontWeight: 700, color: "#0d1b3e" }}>Top Institutional Picks</div>
+              <div style={{ fontFamily: "monospace", fontSize: 10, color: "#8896a8", letterSpacing: 1 }}>{timestamp} · {stocks.length} picks</div>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14, marginBottom: 20 }}>
+              {stocks.map((s, i) => <StockCard key={s.ticker} stock={s} idx={i} />)}
+            </div>
+
+            {briefing && (
+              <div style={{ background: "#0d1b3e", borderRadius: 10, padding: "28px 32px", marginBottom: 20, animation: "fadeUp 0.4s ease both" }}>
+                <div style={{ fontFamily: "Georgia, serif", fontSize: 20, fontWeight: 700, color: "#fff", marginBottom: 4 }}>Market Intelligence Briefing</div>
+                <div style={{ fontFamily: "monospace", fontSize: 9, color: "rgba(255,255,255,0.3)", letterSpacing: 2, textTransform: "uppercase", marginBottom: 18 }}>KCM Research — Confidential</div>
+                <div style={{ fontSize: 13, lineHeight: 1.9, color: "rgba(255,255,255,0.72)", whiteSpace: "pre-wrap" }}>{briefing}</div>
+              </div>
+            )}
+
+            <div style={{ background: "#fff", border: "1px solid #e2e6ec", borderLeft: "3px solid #b89650", borderRadius: 8, padding: "14px 18px", marginBottom: 20, fontSize: 12, color: "#4a5568" }}>
+              <strong style={{ color: "#0d1b3e" }}>Robinhood Execution Tip:</strong> Search any ticker above directly in Robinhood. Enable fractional shares to build positions in high-priced names at any dollar amount. Consider Robinhood Gold for Level II market data and margin access.
+            </div>
+
+            <div style={{ fontFamily: "monospace", fontSize: 9, color: "#8896a8", textAlign: "center", lineHeight: 1.8, paddingTop: 20, borderTop: "1px solid #e2e6ec", letterSpacing: 0.5 }}>
+              FOR EDUCATIONAL AND RESEARCH PURPOSES ONLY — NOT FINANCIAL OR INVESTMENT ADVICE.<br />
+              KCM AI Research surfaces publicly available institutional positioning data. Always conduct your own due diligence before investing.
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Footer */}
+      <div style={{ background: "#0d1b3e", padding: "16px 32px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <span style={{ fontFamily: "Georgia, serif", fontSize: 14, fontWeight: 700, color: "rgba(255,255,255,0.4)", letterSpacing: 1 }}>KCM</span>
+        <span style={{ fontFamily: "monospace", fontSize: 9, color: "rgba(255,255,255,0.2)", letterSpacing: 1 }}>© 2026 KOULICHKOV CAPITAL MANAGEMENT · AI RESEARCH PLATFORM</span>
+      </div>
+    </div>
+  );
+}
